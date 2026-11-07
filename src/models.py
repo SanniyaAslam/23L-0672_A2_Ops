@@ -12,7 +12,7 @@ def build_cnn(img=224, dropout=0.4, lr=1e-3):
     x = L.Rescaling(1 / 255.0)(inp)                              # 0..255 -> 0..1
     for f in (32, 64, 128):
         x = L.Conv2D(f, 3, padding="same", use_bias=False)(x)     # learn local patterns
-        x = L.BatchNormalization()(x)                             # stabilise training
+        x = L.BatchNormalization(momentum=0.9)(x)                            # stabilise training
         x = L.ReLU()(x)
         x = L.MaxPooling2D()(x)                                   # shrink, keep strongest response
     x = L.GlobalAveragePooling2D()(x)                             # far fewer params than Flatten
