@@ -1,0 +1,8 @@
+# Flask UI image: NO TensorFlow (model lives behind the cloud API)
+Flask==3.0.3
+gunicorn==22.0.0
+SQLAlchemy==2.0.32
+psycopg2-binary==2.9.9
+requests==2.32.3
+Pillow==10.4.0
+python-dotenv==1.0.1

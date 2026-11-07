@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block body %}
+<h1>History</h1>
+<table><tr><th>When (UTC)</th><th>File</th><th>Decision</th><th>Confidence</th><th>Model</th></tr>
+{% for r in rows %}<tr><td>{{ r.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td><td>{{ r.filename }}</td>
+<td>{{ r.label }}</td><td>{{ '%.1f'|format(r.confidence*100) }}%</td><td>{{ r.model_name }} v{{ r.model_version }}</td></tr>
+{% else %}<tr><td colspan="5">No predictions yet.</td></tr>{% endfor %}</table>{% endblock %}

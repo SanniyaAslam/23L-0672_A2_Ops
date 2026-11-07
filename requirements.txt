@@ -1,0 +1,12 @@
+# Training / experiments (full environment)
+tensorflow>=2.16,<2.18
+keras-tuner>=1.4
+mlflow>=2.16,<3
+dagshub
+python-dotenv
+pandas
+numpy
+scikit-learn
+matplotlib
+Pillow
+dvc

@@ -1,0 +1,5 @@
+{% extends "base.html" %}{% block body %}
+<div class="card"><h1>{{ label }}</h1><p class="big">{{ conf }}% confidence</p>
+<p>File: {{ name }}</p>
+<p class="caveat">Caveat: this is a statistical guess from a small model. Compressed, edited or unusual images can fool it.</p>
+<a href="/">Check another</a></div>{% endblock %}
