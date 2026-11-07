@@ -1,0 +1,6 @@
+[core]
+    remote = localstore
+['remote "origin"']
+    url = https://dagshub.com/SanniyaAslam/23L-0672_A2_Ops.dvc
+['remote "localstore"']
+    url = C:\Users\Sanni\Desktop\dvc_remote_a2
