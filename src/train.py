@@ -4,11 +4,12 @@
   python src/train.py --model transfer --run-name 07_mnv2_autolog --autolog
 """
 import argparse, os, re, subprocess
+from collections import defaultdict
 import numpy as np, mlflow
 from dotenv import load_dotenv
 from tensorflow import keras
 from data import set_seeds, make_ds, SEED
-from models import build_cnn, build_transfer, unfreeze_last_block
+from models import build_cnn, build_transfer, unfreeze_last_block, get_backbone
 import evaluate as ev
 
 load_dotenv()
@@ -28,11 +29,31 @@ def dvc_version():
     try: return re.search(r"md5: (\S+)", open("data/raw.dvc").read()).group(1)
     except Exception: return "unknown"
 
-def callbacks(ckpt, logger):
+def callbacks(ckpt, logger, best=None):
     cbs = [keras.callbacks.EarlyStopping(monitor="val_loss", patience=4, restore_best_weights=True),
-           keras.callbacks.ModelCheckpoint(ckpt, monitor="val_loss", save_best_only=True),
+           # best=... stops stage 2 from overwriting a better stage-1 checkpoint
+           keras.callbacks.ModelCheckpoint(ckpt, monitor="val_loss", save_best_only=True,
+                                           initial_value_threshold=best),
            keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.3, patience=2, min_lr=1e-7)]
     return cbs + ([logger] if logger else [])
+
+def plot_curves(hist, boundary, best_epoch, run_name):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    ep = list(range(1, len(hist["loss"]) + 1))
+    fig, ax = plt.subplots(1, 2, figsize=(12, 4))
+    for a, key, title in [(ax[0], "loss", "Loss"), (ax[1], "accuracy", "Accuracy")]:
+        a.plot(ep, hist[key], label="train")
+        a.plot(ep, hist["val_" + key], label="validation")
+        if boundary:
+            a.axvline(boundary + 0.5, ls=":", color="gray", label="fine-tuning starts")
+        a.axvline(best_epoch, ls="--", color="red", label=f"best epoch = {best_epoch}")
+        a.set_xlabel("epoch"); a.set_ylabel(key); a.set_title(f"{title} ({run_name})"); a.legend()
+    plt.tight_layout()
+    path = f"artifacts/curves_{run_name}.png"
+    plt.savefig(path, dpi=120); plt.close()
+    return path
 
 def main():
     ap = argparse.ArgumentParser()
@@ -52,7 +73,8 @@ def main():
     a = ap.parse_args()
 
     set_seeds()
-    mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
+    # falls back to a local ./mlruns folder if .env is not set up yet
+    mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "file:./mlruns"))
     mlflow.set_experiment(f"{os.environ.get('ROLL_NUMBER', 'ROLL')}_A2_Ops")
     if a.autolog:
         mlflow.tensorflow.autolog(log_models=False)
@@ -70,24 +92,35 @@ def main():
         mlflow.log_params(vars(a))
         logger = None if a.autolog else MLflowEpochLogger()
 
+        hist, boundary = defaultdict(list), 0
+        def add(h):
+            for k, v in h.history.items():
+                hist[k].extend(float(x) for x in v)
+
         if a.model == "cnn":
             model = build_cnn(a.img_size, a.dropout, a.lr)
-            h = model.fit(train, validation_data=val, epochs=a.epochs, callbacks=callbacks(ckpt, logger))
-            hist = list(h.history["val_loss"])
+            add(model.fit(train, validation_data=val, epochs=a.epochs, callbacks=callbacks(ckpt, logger)))
         else:
             model = build_transfer(a.img_size, a.dropout, a.lr)
-            h1 = model.fit(train, validation_data=val, epochs=a.epochs, callbacks=callbacks(ckpt, logger))
-            hist = list(h1.history["val_loss"])
+            stage1 = [l.name for l in model.layers if l.trainable and l is not get_backbone(model)]
+            stage1.append("backbone: 0 trainable layers (frozen)")
+            print("Trainable layers (stage 1):", stage1)
+            mlflow.log_text("\n".join(stage1), "trainable_layers_stage1.txt")
+            add(model.fit(train, validation_data=val, epochs=a.epochs, callbacks=callbacks(ckpt, logger)))
+            boundary = len(hist["loss"])
             if not a.no_finetune:
                 trainable = unfreeze_last_block(model, a.ft_lr)
                 print("Trainable backbone layers (stage 2):", trainable)
                 mlflow.log_text("\n".join(trainable), "trainable_layers_stage2.txt")
-                if logger: logger.offset = len(hist)
-                h2 = model.fit(train, validation_data=val, epochs=a.ft_epochs,
-                               callbacks=callbacks(ckpt, logger))
-                hist += list(h2.history["val_loss"])
+                if logger: logger.offset = boundary
+                add(model.fit(train, validation_data=val, epochs=a.ft_epochs,
+                              callbacks=callbacks(ckpt, logger, best=min(hist["val_loss"]))))
 
-        mlflow.log_param("best_epoch", int(np.argmin(hist)) + 1)
+        best_epoch = int(np.argmin(hist["val_loss"])) + 1
+        mlflow.log_param("best_epoch", best_epoch)
+        print("BEST EPOCH:", best_epoch, "| val_loss:", round(min(hist["val_loss"]), 4))
+        curves = plot_curves(hist, boundary if a.model == "transfer" and not a.no_finetune else 0,
+                             best_epoch, a.run_name)
         model = keras.models.load_model(ckpt)                 # best checkpoint by val_loss
 
         pv, yv = ev.predict(model, val), ev.labels("val")
@@ -96,11 +129,12 @@ def main():
         m = ev.metrics(yt, pt, thr)
         mlflow.log_metrics({f"test_{k}": v for k, v in m.items()})
         mlflow.log_metric("threshold", thr)
-        print("threshold", thr, m)
+        print("THRESHOLD:", round(thr, 2))
+        print("TEST METRICS:", {k: round(float(v), 4) for k, v in m.items()})
 
         cm, roc = ev.plots(yt, pt, thr, a.run_name)
         errs = ev.misclassified_grid("test", pt, thr, f"artifacts/errors_{a.run_name}.png")
-        for f in (cm, roc, errs): mlflow.log_artifact(f, "plots")
+        for f in (curves, cm, roc, errs): mlflow.log_artifact(f, "plots")
         for s in ("train", "val", "test"): mlflow.log_artifact(f"data/splits/{s}.csv", "splits")
         os.system("pip freeze > artifacts/requirements_freeze.txt")
         mlflow.log_artifact("artifacts/requirements_freeze.txt", "env")

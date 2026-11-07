@@ -38,7 +38,7 @@ def make_ds(split, img_size=224, batch=32, train=False, augment=True):
         img = tf.image.resize(img, (img_size, img_size))   # squashes aspect ratio; float32, 0..255
         return img, y
 
-    ds = ds.map(load, num_parallel_calls=tf.data.AUTOTUNE).ignore_errors()
+    ds = ds.map(load, num_parallel_calls=tf.data.AUTOTUNE)
     if train and augment:                                   # augmentation: TRAIN ONLY
         aug = augmenter()
         ds = ds.map(lambda x, y: (aug(x, training=True), y), num_parallel_calls=tf.data.AUTOTUNE)
