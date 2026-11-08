@@ -9,3 +9,5 @@ instance/
 *.db
 mlruns_toy/
 toy_loss.png
+
+__pycache__/
