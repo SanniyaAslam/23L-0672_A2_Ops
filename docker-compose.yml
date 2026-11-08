@@ -1,19 +1,38 @@
+# VisionGuard stack: web app + PostgreSQL.
+# Secrets come from the untracked .env file (Compose reads it automatically for ${...} values).
+# Only the settings each service needs are passed to it - the DagsHub token never reaches a container.
 services:
   web:
     build: .
-    ports: ["5000:5000"]
-    env_file: .env
+    ports:
+      - "5000:5000"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      INFERENCE_MODE: remote
+      INFERENCE_API_URL: ${INFERENCE_API_URL}
+      INFERENCE_API_KEY: ${INFERENCE_API_KEY}
+      SECRET_KEY: ${SECRET_KEY}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-4}
     depends_on:
       db:
-        condition: service_healthy
+        condition: service_healthy      # web starts only after the database answers
+    restart: unless-stopped
+
   db:
     image: postgres:16-alpine
-    env_file: .env
-    volumes: [pgdata:/var/lib/postgresql/data]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data  # named volume: data survives container removal
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
+      timeout: 3s
       retries: 10
-    # no 'ports:' -> database is reachable only from other services on the Compose network
+    restart: unless-stopped
+    # no 'ports:' section -> the database is reachable only from other services on the Compose network
+
 volumes:
   pgdata:
