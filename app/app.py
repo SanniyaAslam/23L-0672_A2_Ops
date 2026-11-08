@@ -4,7 +4,7 @@ from flask import Flask, render_template, request
 from PIL import Image, UnidentifiedImageError
 from werkzeug.utils import secure_filename
 from db import Store
-from inference import RemoteClassifier
+from inference import build_classifier
 
 ALLOWED = {"jpg", "jpeg", "png", "webp"}
 
@@ -13,8 +13,7 @@ def create_app(store=None, classifier=None):
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev")
     app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_UPLOAD_MB", 5)) * 1024 * 1024
     store = store or Store(os.environ.get("DATABASE_URL", "sqlite:///visionguard.db"))
-    classifier = classifier or RemoteClassifier(os.environ.get("INFERENCE_API_URL", ""),
-                                                os.environ.get("INFERENCE_API_KEY", ""))
+    classifier = classifier or build_classifier()
 
     @app.get("/")
     def index():
