@@ -1,0 +1,13 @@
+# Flask UI image. Slim base, deps BEFORE source (layer cache), non-root, health check.
+# No TensorFlow here: the model runs behind the cloud API, so this image stays small.
+FROM python:3.11-slim
+ENV PYTHONUNBUFFERED=1
+WORKDIR /app
+COPY requirements-app.txt .
+RUN pip install -r requirements-app.txt
+COPY app/ .
+RUN useradd -m appuser && chown -R appuser /app
+USER appuser
+EXPOSE 5000
+HEALTHCHECK --interval=15s --timeout=3s CMD python -c "import urllib.request as u; u.urlopen('http://localhost:5000/health')" || exit 1
+CMD ["python", "app.py"]
