@@ -3,8 +3,8 @@
 
 AI-generated vs real image classifier: Keras -> MLflow/DagsHub -> cloud model API -> Flask UI + Postgres -> Docker Compose.
 
-## Architecture (Task 7 pathway C: any cloud VM)
-    Browser -> Flask UI (localhost, Compose: web + db) --HTTP + X-API-Key--> Model API (cloud VM, Docker)
+## Architecture (Task 7 pathway B: Vercel)
+    Browser -> Flask UI (localhost, Compose: web + db) --HTTP + X-API-Key--> Model API (Vercel, TFLite)
                           |
                        Postgres (history)
 
